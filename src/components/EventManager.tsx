@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Plus, Settings } from "lucide-react";
+import { Plus, Users, LayoutGrid } from "lucide-react";
 
 interface Seat {
   id: string;
@@ -92,10 +92,9 @@ const EventManager = () => {
 
     if (error) { toast.error("이벤트 생성 실패"); return; }
 
-    // Create seats
     const seatLabels = Array.from({ length: seatCount }, (_, i) => ({
       event_id: event.id,
-      seat_label: `Seat ${String.fromCharCode(65 + i)}`,
+      seat_label: `${i + 1}번`,
     }));
 
     await supabase.from("seats").insert(seatLabels);
@@ -115,9 +114,7 @@ const EventManager = () => {
   const handleSeatClick = async (seat: Seat) => {
     if (!isAdmin) return;
 
-    // If we're assigning a user from waitlist
     if (assigningUser && seat.status === "empty") {
-      // Update seat
       const { error: seatError } = await supabase
         .from("seats")
         .update({ occupant_id: assigningUser.userId, status: "occupied", assigned_at: new Date().toISOString() })
@@ -125,14 +122,12 @@ const EventManager = () => {
 
       if (seatError) { toast.error("배치 실패"); return; }
 
-      // Update waitlist status
       await supabase
         .from("waitlist")
         .update({ status: "assigned" })
         .eq("event_id", selectedEventId!)
         .eq("user_id", assigningUser.userId);
 
-      // Send notification
       const selectedEvent = events.find((e) => e.id === selectedEventId);
       await supabase.from("notifications").insert({
         user_id: assigningUser.userId,
@@ -140,13 +135,12 @@ const EventManager = () => {
         message: `${selectedEvent?.name} / ${seat.seat_label}에 배치되었습니다`,
       });
 
-      toast.success(`${assigningUser.name}이(가) ${seat.seat_label}에 배치되었습니다`);
+      toast.success(`${assigningUser.name} → ${seat.seat_label} 배치 완료`);
       setAssigningUser(null);
       fetchSeatsAndWaitlist();
       return;
     }
 
-    // If seat is occupied, remove occupant
     if (seat.status === "occupied") {
       await supabase
         .from("seats")
@@ -158,14 +152,16 @@ const EventManager = () => {
   };
 
   const selectedEvent = events.find((e) => e.id === selectedEventId);
+  const occupiedCount = seats.filter(s => s.status === "occupied").length;
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 p-4 lg:p-6 min-h-[calc(100vh-64px)]">
+    <div className="flex flex-col lg:flex-row gap-4 p-4 lg:p-6 min-h-[calc(100vh-64px)] felt-texture">
       {/* Seat Map */}
       <div className="flex-1 space-y-4">
+        {/* Controls */}
         <div className="flex items-center gap-3 flex-wrap">
           <Select value={selectedEventId ?? ""} onValueChange={setSelectedEventId}>
-            <SelectTrigger className="w-[200px]">
+            <SelectTrigger className="w-[200px] bg-card border-border">
               <SelectValue placeholder="이벤트 선택" />
             </SelectTrigger>
             <SelectContent>
@@ -178,19 +174,19 @@ const EventManager = () => {
           {isAdmin && (
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
-                <Button size="sm" variant="secondary">
+                <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90">
                   <Plus className="w-4 h-4 mr-1" />
                   새 이벤트
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="sm:max-w-md">
                 <DialogHeader>
-                  <DialogTitle>새 이벤트 생성</DialogTitle>
+                  <DialogTitle className="font-display">새 이벤트 생성</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 pt-2">
                   <Input placeholder="이벤트 이름 (예: 토너먼트 #1)" value={newEventName} onChange={(e) => setNewEventName(e.target.value)} />
                   <Input type="number" placeholder="좌석 수" value={newEventSeats} onChange={(e) => setNewEventSeats(e.target.value)} min="1" max="26" />
-                  <Button onClick={createEvent} className="w-full">생성</Button>
+                  <Button onClick={createEvent} className="w-full bg-primary text-primary-foreground">생성</Button>
                 </div>
               </DialogContent>
             </Dialog>
@@ -198,19 +194,40 @@ const EventManager = () => {
 
           {assigningUser && (
             <div className="flex items-center gap-2 ml-auto">
-              <span className="text-sm text-waiting animate-pulse">
-                {assigningUser.name} 배치 중...
-              </span>
-              <Button size="sm" variant="ghost" onClick={() => setAssigningUser(null)}>
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20">
+                <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                <span className="text-sm font-medium text-primary">
+                  {assigningUser.name} 배치 중
+                </span>
+              </div>
+              <Button size="sm" variant="ghost" onClick={() => setAssigningUser(null)} className="text-muted-foreground">
                 취소
               </Button>
             </div>
           )}
         </div>
 
+        {/* Stats bar */}
         {selectedEvent && (
-          <div className="grid-pattern rounded-xl p-6 min-h-[400px]">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+          <div className="flex items-center gap-4 text-sm">
+            <div className="flex items-center gap-1.5 text-muted-foreground">
+              <LayoutGrid className="w-4 h-4" />
+              <span>{seats.length}석</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-primary">
+              <Users className="w-4 h-4" />
+              <span>{occupiedCount}명 착석</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-muted-foreground">
+              <span>{seats.length - occupiedCount}석 비어있음</span>
+            </div>
+          </div>
+        )}
+
+        {/* Seat Grid */}
+        {selectedEvent && (
+          <div className="rounded-2xl border border-border bg-card/30 backdrop-blur-sm p-6 min-h-[400px]">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
               {seats.map((seat) => (
                 <SeatCard
                   key={seat.id}
@@ -226,15 +243,20 @@ const EventManager = () => {
         )}
 
         {events.length === 0 && (
-          <div className="flex items-center justify-center h-64 text-muted-foreground">
-            {isAdmin ? "새 이벤트를 생성하세요" : "현재 진행 중인 이벤트가 없습니다"}
+          <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-3">
+            <div className="w-16 h-16 rounded-2xl bg-card border border-border flex items-center justify-center">
+              <span className="text-3xl opacity-50">♠️</span>
+            </div>
+            <p className="text-sm">
+              {isAdmin ? "새 이벤트를 생성하세요" : "현재 진행 중인 이벤트가 없습니다"}
+            </p>
           </div>
         )}
       </div>
 
       {/* Waitlist Panel */}
       {selectedEventId && (
-        <div className="lg:w-[350px] bg-card rounded-xl border border-border p-4">
+        <div className="lg:w-[340px] shrink-0 rounded-2xl border border-border bg-card/50 backdrop-blur-sm p-4">
           <WaitlistPanel
             eventId={selectedEventId}
             waitlist={waitlist}
